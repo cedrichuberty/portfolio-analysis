@@ -1,0 +1,358 @@
+###                           PORTFOLIO OPTIMIZATION                        ###
+
+
+### Read in data ### 
+
+### Get risk-free rate (Euribor) ### #do same for other currencies?
+
+euribor_data <- read.csv("https://api.statistiken.bundesbank.de/rest/download/BBK01/SU0343?format=csv&lang=de",sep = ";",dec = ",")
+riskfree_rate <- as.numeric(gsub(",",".",euribor_data[dim(euribor_data)[1],2]))/100
+
+### Get dates ###
+
+period_1 <- as.numeric(as.POSIXct("2000-01-01 0:00:00", tz="GMT"))
+
+today <- Sys.Date()
+period_2 <- as.numeric(as.POSIXct(paste(today,"0:00:00"), tz="GMT"))
+
+### Get data ###
+#some stocks are precoded at the end of this code 
+
+get_data_from_yahoo <- function(ticker){
+  link <- paste("https://query1.finance.yahoo.com/v7/finance/download/",ticker,"?period1=",period_1,"&period2=",period_2,"&interval=1d&events=history&includeAdjustedClose=true",sep="")
+  asset_data <- read.csv(link)
+  asset_data <- asset_data[c("Date","Close")]
+  asset_data <- asset_data[asset_data$Close != "null",]
+  asset_data$Close <- as.numeric(asset_data$Close)
+  return(asset_data)
+}
+
+### Merge asset data together ###
+
+create_portfolio <- function(asset1,asset2,...){
+  portfolio <- merge(asset1,asset2,by.x="Date",by.y="Date",suffixes=c(paste(".",deparse(substitute(asset1)),sep=""),paste(".",deparse(substitute(asset2)),sep="")))
+  assets <- list(...)
+  name_of_assets <- sapply(substitute(list(...))[-1], deparse)
+  if (length(assets) >= 1){
+    for (asset in (1:length(assets))) {
+      portfolio <- merge(portfolio,assets[[asset]],by.x="Date",by.y="Date",suffixes=c(paste(".",name_of_assets[asset-1],sep=""),paste(".",name_of_assets[asset],sep="")))
+    }
+    if (length(assets)%%2==1){colnames(portfolio)[length(portfolio)] <- paste("Close.",name_of_assets[length(name_of_assets)],sep = "")}
+  }
+  return(portfolio)
+}
+
+### Calculate expected return and volatility ###
+
+expected_return_and_covariance_matrix <- function(portfolio,investment_horizon_in_years=1){
+  number_of_days <- dim(portfolio)[1]
+  number_of_assets <- dim(portfolio)[2]-1
+  name_of_assets <- substr(names(portfolio)[2:length(names(portfolio))],7,nchar(names(portfolio)[2:length(names(portfolio))]))
+  b_hat <- rep(NA,number_of_assets)
+  Sigma_hat <- matrix(NA,number_of_assets,number_of_assets)
+  for (asset in (2:(number_of_assets+1))) {
+    b_hat[asset-1] <- mean(log(portfolio[2:number_of_days,asset]/portfolio[1:(number_of_days-1),asset]))
+  }
+  for (asset_i in (2:(number_of_assets+1))) {
+    for (asset_j in (2:(number_of_assets+1))) {
+      Sigma_hat[asset_i-1,asset_j-1] <- (investment_horizon_in_years*252)*cov(log(portfolio[2:number_of_days,asset_i]/portfolio[1:(number_of_days-1),asset_i]),log(portfolio[2:number_of_days,asset_j]/portfolio[1:(number_of_days-1),asset_j]))
+    }
+  }
+  mu_hat <- exp((investment_horizon_in_years*252*b_hat)+0.5*diag(Sigma_hat))-rep(1,number_of_assets)
+  C_hat <- diag(exp((investment_horizon_in_years*252*b_hat)+0.5*diag(Sigma_hat)))%*%(exp(Sigma_hat)-matrix(1,number_of_assets,number_of_assets))%*%diag(exp((investment_horizon_in_years*252*b_hat)+0.5*diag(Sigma_hat)))
+  solution <- as.data.frame(mu_hat)
+  solution <- cbind(solution,C_hat)
+  names(solution) <- c("Expected_return",name_of_assets)
+  row.names(solution) <- name_of_assets
+  return(solution)
+}
+
+### Estimate correlation between assets ### 
+
+estimate_correlation <- function(portfolio,investment_horizon_in_years=1){
+  #number_of_days <- dim(portfolio)[1]
+  number_of_assets <- dim(portfolio)[2]-1
+  name_of_assets <- substr(names(portfolio)[2:length(names(portfolio))],7,nchar(names(portfolio)[2:length(names(portfolio))]))
+  covariance_matrix <- as.matrix(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,2:(number_of_assets+1)])
+  variances <- diag(covariance_matrix)
+  correlation_matrix <- matrix(NA,dim(covariance_matrix)[1],dim(covariance_matrix)[2])
+  for (asset_i in (1:number_of_assets)) {
+    for (asset_j in (1:number_of_assets)) {
+      correlation_matrix[asset_i,asset_j] <- (covariance_matrix[asset_i,asset_j])/(sqrt(variances[asset_i])*sqrt(variances[asset_j]))
+    }
+  }
+  correlation_matrix <- as.data.frame(correlation_matrix,row.names = name_of_assets)
+  names(correlation_matrix) <- name_of_assets
+  return(correlation_matrix)
+}
+
+
+### Evaluate performance ###
+
+portfolio_performance <- function(portfolio,asset_allocation=cbind(portfolio[,1],data.frame(matrix(1/(dim(portfolio)[2]-1),dim(portfolio)[1],(dim(portfolio)[2]-1))))){
+  weighted_asset_performance <- portfolio[,1]
+  weighted_asset_performance <- cbind(weighted_asset_performance,portfolio[,2:length(portfolio)]*asset_allocation[,2:length(portfolio)])
+  performance <- as.data.frame(cbind(portfolio[,1],rowSums(weighted_asset_performance[2:length(weighted_asset_performance)])))
+  names(performance) <- c("Date","Close")
+  performance$Close <- as.numeric(performance$Close)
+  return(performance)
+}
+
+### Plot portfolio ###
+
+plot_portfolio <- function(portfolio,asset_allocation=cbind(portfolio[,1],data.frame(matrix(1/(dim(portfolio)[2]-1),dim(portfolio)[1],(dim(portfolio)[2]-1)))),performance_to_be_plotted="all",colours = rev(palette.colors())){
+  if (performance_to_be_plotted=="assets"){
+    name_of_assets <- substr(names(portfolio)[2:length(names(portfolio))],7,nchar(names(portfolio)[2:length(names(portfolio))]))
+    ymax <- max(portfolio[,2:length(portfolio)])
+    plot(portfolio[,2],type = "l",xaxt="n",ylim = c(0,ymax),xlab = "Date",ylab = "Price in EUR",col=colours[1],main = "Performance")
+    for (asset in (3:length(portfolio))) {
+      lines(portfolio[,asset],col=colours[asset-1])
+    }
+    axis(1,at=round(seq(1,length(portfolio[,1]),(length(portfolio[,1])-1)/10)),labels = portfolio[round(seq(1,length(portfolio[,1]),(length(portfolio[,1])-1)/10)),1],las=2)
+    legend(1,ymax,legend = name_of_assets,fill = colours)
+  }
+  else if (performance_to_be_plotted=="portfolio"){ 
+    performance <- portfolio_performance(portfolio,asset_allocation)
+    ymax <- max(performance[,2])
+    plot(performance[,2],type="l",xaxt="n",ylim = c(0,ymax),xlab="Date",ylab="Price in EUR",col="black",main = "Performance")
+    axis(1,at=round(seq(1,length(performance[,1]),(length(performance[,1])-1)/10)),labels = performance[round(seq(1,length(performance[,1]),(length(performance[,1])-1)/10)),1],las=2)
+    legend(1,ymax,legend = "Portfolio",fill = "black")
+  }
+  else if (performance_to_be_plotted=="all"){
+    name_of_assets <- substr(names(portfolio)[2:length(names(portfolio))],7,nchar(names(portfolio)[2:length(names(portfolio))]))
+    performance <- portfolio_performance(portfolio,asset_allocation)
+    ymax <- max(max(portfolio[,2:length(portfolio)]),max(performance[,2]))
+    plot(portfolio[,2],type = "l",xaxt="n",ylim = c(0,ymax),xlab = "Date",ylab = "Price in EUR",col=colours[1],main = "Performance")
+    for (asset in (3:length(portfolio))) {
+      lines(portfolio[,asset],col=colours[asset-1])
+    }
+    lines(performance[,2],col="black")
+    axis(1,at=round(seq(1,length(portfolio[,1]),(length(portfolio[,1])-1)/10)),labels = portfolio[round(seq(1,length(portfolio[,1]),(length(portfolio[,1])-1)/10)),1],las=2)
+    legend(1,ymax,legend = c("Portfolio",name_of_assets),fill = c("black",colours))
+  }
+  #return()
+}
+
+### Example ###
+
+football_portfolio <- create_portfolio(AJAX,
+                                       BENFICA,
+                                       BVB,
+                                       CELTIC_GLASGOW,
+                                       FC_PORTO,
+                                       JUVENTUS,
+                                       LAZIO,
+                                       MANCHESTER_UNITED,
+                                       OLYMPIQUE_LYON,
+                                       SPORTING_BRAGA,
+                                       SPORTING_LISBOA)
+
+big_portfolio <- create_portfolio(APPLE,ABC_ARBITRAGE,AIRBNB,ADIDAS,AIR_FRANCE_KLM,AIRBUS,AJAX,ALLIANZ,AMAZON,BMW,BVB,CELTIC_GLASGOW,DEUTSCHE_BOERSE,DEUTSCHE_BANK,DISNEY,FC_PORTO,SOCIETE_GENERALE,GOOGLE,HANNOVER_RE,IBM,JUVENTUS,COCA_COLA,LUFTHANSA,MANCHESTER_UNITED,MERCEDES_BENZ,LVMH,MICROSOFT,MUNICH_RE,NETFLIX,NIKE,OLYMPIQUE_LYON,SPORTING_BRAGA,SPORTING_LISBOA,BENFICA,SWISS_RE,PORSCHE,PUMA,PERNOD_RICARD,LAZIO,TESLA,VOLKSWAGEN)
+
+### Currency change ###
+
+currency_change <- function(asset,fx_quote){
+  currency_changed_asset <- merge(asset,fx_quote,by.x="Date",by.y="Date")
+  currency_changed_asset <- cbind(currency_changed_asset,currency_changed_asset[,2]*currency_changed_asset[,3])
+  currency_changed_asset <- currency_changed_asset[,c(1,4)]
+  names(currency_changed_asset) <- c("Date","Close")
+  return(currency_changed_asset)
+}
+
+### Mean-Variance diagram ###
+
+mean_variance_diagram <- function(asset1,asset2,...){
+  assets <- list(...)
+  #name_of_assets <- sapply(substitute(list(...))[-1], deparse)
+  plot(sqrt(expected_return_and_covariance_matrix(asset1)[2]),expected_return_and_covariance_matrix(asset1)[1],xlim = c(0,1.5),ylim = c(-0.2,1),xlab = "Standard deviation",ylab = "Mean",main = "Mean-Variance Diagram")
+  points(sqrt(expected_return_and_covariance_matrix(asset2)[2]),expected_return_and_covariance_matrix(asset2)[1])
+  if (length(assets) >= 1){
+    for (asset in (1:length(assets))) {
+      expected_return <- expected_return_and_covariance_matrix(assets[[asset]])[1]
+      standard_deviation <- sqrt(expected_return_and_covariance_matrix(assets[[asset]])[2])
+      points(standard_deviation,expected_return)
+    }
+  }
+  #legend(1.5,1,legend = c(asset1,asset2,name_of_assets))
+}
+
+### Dominated assets by Mean-Variance criterion ###
+
+dominance_test <- function(portfolio,return_dominated_assets,investment_horizon_in_years=1){
+  number_of_assets <- dim(portfolio)[2]-1
+  name_of_assets <- substr(names(portfolio)[2:length(names(portfolio))],7,nchar(names(portfolio)[2:length(names(portfolio))]))
+  covariance_matrix <- as.matrix(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,2:(number_of_assets+1)])
+  variances <- diag(covariance_matrix)
+  expected_returns <- expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,1] 
+  dominated <- rep(FALSE,number_of_assets)
+  for (asset_i in (1:number_of_assets)) {
+    for (asset_j in (1:number_of_assets)) {
+      if ((expected_returns[asset_j] >= expected_returns[asset_i] && variances[asset_j] < variances[asset_i]) || (expected_returns[asset_j] > expected_returns[asset_i] && variances[asset_j] <= variances[asset_i])){
+        dominated[asset_i] <- TRUE
+      }
+    }
+  }
+  ifelse(return_dominated_assets,return(name_of_assets[dominated]),return(name_of_assets[!dominated]))
+}
+
+
+markowitz_portfolio <- function(portfolio,r=riskfree_rate,mu_bar,investment_horizon_in_years=1){
+  number_of_assets <- dim(portfolio)[2]-1
+  mu <- as.vector(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,1])
+  C <- as.matrix(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,2:(number_of_assets+1)])
+  a <- as.numeric(t(rep(1,number_of_assets))%*%solve(C)%*%mu)
+  b <- as.numeric(t(mu)%*%solve(C)%*%mu)
+  c <- as.numeric(t(rep(1,number_of_assets))%*%solve(C)%*%rep(1,number_of_assets))
+  d <- b*c-a^2
+  optimal_allocation <- ((mu_bar-r)/(b-2*a*r+c*(r^2)))*(solve(C)%*%(mu-rep(r,number_of_assets)))
+  allocation_riskfree_asset <- 1 - sum(optimal_allocation)
+  variance <- ((mu_bar-r)^2)/(b-2*a*r+c*(r^2))
+  #plot(x=seq(0,1.5,1.5/2000),y=(r+seq(0,1.5,1.5/2000)*sqrt(c*(r^2)-2*a*r+b)),type = "l",main = "Efficiency line",xlab = "Standard deviation",ylab = "Mean")
+  return(optimal_allocation)
+}
+
+market_portfolio <- function(portfolio,r=riskfree_rate,investment_horizon_in_years=1){
+  number_of_assets <- dim(portfolio)[2]-1
+  mu <- as.vector(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,1])
+  C <- as.matrix(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,2:(number_of_assets+1)])
+  a <- as.numeric(t(rep(1,number_of_assets))%*%solve(C)%*%mu)
+  b <- as.numeric(t(mu)%*%solve(C)%*%mu)
+  c <- as.numeric(t(rep(1,number_of_assets))%*%solve(C)%*%rep(1,number_of_assets))
+  if (r>=a/c){stop("Assumption not verified.")}
+  allocation <- (1/(a-c*r))*(solve(C)%*%(mu - rep(r,number_of_assets)))
+  expected_return <- (b-a*r)/(a-c*r)
+  variance <- (c*r^2-2*a*r+b)/((a-c*r)^2)
+  return(rbind(expected_return,variance,allocation))
+}
+
+### Sharpe ratio ###
+
+sharpe_ratio <- function(portfolio,r=riskfree_rate,asset_allocation=data.frame(matrix(1/(dim(portfolio)[2]-1),1,(dim(portfolio)[2]-1))),investment_horizon_in_years=1){
+  number_of_assets <- dim(portfolio)[2]-1
+  mu <- as.vector(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,1])
+  C <- as.matrix(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,2:(number_of_assets+1)])
+  allocation <- as.vector(as.matrix(asset_allocation))
+  expected_return <- as.numeric(t(mu)%*%allocation)
+  variance <- as.numeric(t(allocation)%*%C%*%allocation)
+  return((expected_return-r)/variance)
+}
+
+get_beta <- function(portfolio=market,r=riskfree_rate,asset_allocation=data.frame(matrix(1/(dim(portfolio)[2]-1),1,(dim(portfolio)[2]-1))),investment_horizon_in_years=1){
+  number_of_days <- dim(portfolio)[1]
+  number_of_assets <- dim(portfolio)[2]-1
+  mu <- as.vector(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,1])
+  C <- as.matrix(expected_return_and_covariance_matrix(portfolio,investment_horizon_in_years)[,2:(number_of_assets+1)])
+  market_portfolio_standard_deviation <- sqrt(market_portfolio(portfolio,r,investment_horizon_in_years)[2])
+  asset_allocation <- as.numeric(asset_allocation)
+  x <- portfolio_performance(portfolio,cbind(portfolio[,1],data.frame(matrix(asset_allocation,number_of_days,number_of_assets,byrow = TRUE))))
+  x_M <- portfolio_performance(portfolio,cbind(portfolio[,1],data.frame(matrix(market_portfolio(portfolio,r)[3:(number_of_assets+2)],number_of_days,number_of_assets,byrow = TRUE))))
+  rho <- estimate_correlation(create_portfolio(x,x_M))[1,2]
+  portfolio_standard_deviation <- as.numeric(t(as.vector(asset_allocation))%*%C%*%as.vector(asset_allocation))
+  portfolio_beta <- (rho*portfolio_standard_deviation)/market_portfolio_standard_deviation
+  return(portfolio_beta)
+}
+
+#plot(x=seq(0,3,3/2000),y=r+seq(0,3,3/2000)*(market_portfolio(football_portfolio,riskfree_rate)[1]-r),type = "l",xlab = "Beta",ylab = "Expected return")
+
+
+
+
+
+
+### Currencies ###
+
+BTCEUR <- get_data_from_yahoo("BTC-EUR")
+BTCUSD <- get_data_from_yahoo("BTC-USD")
+CHFEUR <- get_data_from_yahoo("CHFEUR=X")
+ETHEUR <- get_data_from_yahoo("ETH-EUR")
+ETHUSD <- get_data_from_yahoo("ETH-USD")
+USDEUR <- get_data_from_yahoo("EUR=X")
+GBPEUR <- get_data_from_yahoo("GBPEUR=X")
+
+EURUSD <- get_data_from_yahoo("EURUSD=X")
+
+### Stocks ###
+
+#AMERICAN_AIRLINES <- currency_change(get_data_from_yahoo("AAL"),USDEUR) #USD
+AMERICAN_AIRLINES <- get_data_from_yahoo("AAL") #USD
+APPLE <- get_data_from_yahoo("AAPL") #USD
+ABC_ARBITRAGE <- get_data_from_yahoo("ABCA.PA")
+AIRBNB <- get_data_from_yahoo("ABNB") #USD
+ADIDAS <- get_data_from_yahoo("ADS.DE")
+AIR_FRANCE_KLM <- get_data_from_yahoo("AF.PA")
+AIRBUS <- get_data_from_yahoo("AIR.PA")
+AJAX <- get_data_from_yahoo("AJAX.AS")
+ALLIANZ <- get_data_from_yahoo("ALV.DE")
+AMAZON <- get_data_from_yahoo("AMZN") #USD
+BOEING <- get_data_from_yahoo("BA") #USD
+ALIBABA <- get_data_from_yahoo("BABA") #USD
+BLACKROCK <- get_data_from_yahoo("BLK") #USD
+BMW <- get_data_from_yahoo("BMW.DE")
+BVB <- get_data_from_yahoo("BVB.DE")
+CELTIC_GLASGOW <- get_data_from_yahoo("CCP.L") #GBP
+DELTA_AIRLINES <- get_data_from_yahoo("DAL") #USD
+DEUTSCHE_BOERSE <- get_data_from_yahoo("DB1.DE")
+DEUTSCHE_BANK <- get_data_from_yahoo("DBK.DE")
+DISNEY <- get_data_from_yahoo("DIS") #USD
+EBAY <- get_data_from_yahoo("EBAY") #USD
+ETSY <- get_data_from_yahoo("ETSY") #USD
+FC_PORTO <- get_data_from_yahoo("FCP.LS")
+SOCIETE_GENERALE <- get_data_from_yahoo("GLE.PA")
+GOOGLE <- get_data_from_yahoo("GOOG") #USD
+HANNOVER_RE <- get_data_from_yahoo("HNR1.DE")
+IBM <- get_data_from_yahoo("IBM") #USD
+JUVENTUS <- get_data_from_yahoo("JUVE.MI")
+COCA_COLA <- get_data_from_yahoo("KO") #USD
+LUFTHANSA <- get_data_from_yahoo("LHA.DE")
+SOUTHWEST_AIRLINES <- get_data_from_yahoo("LUV") #USD
+MANCHESTER_UNITED <- get_data_from_yahoo("MANU") #USD
+MERCEDES_BENZ <- get_data_from_yahoo("MBG.DE")
+LVMH <- get_data_from_yahoo("MC.PA")
+META <- get_data_from_yahoo("META") #USD
+MICROSOFT <- get_data_from_yahoo("MSFT") #USD
+ARCELOR_MITTAL <- get_data_from_yahoo("MT") #USD
+MUNICH_RE <- get_data_from_yahoo("MUV2.DE")
+NETFLIX <- get_data_from_yahoo("NFLX") #USD
+NIKE <- get_data_from_yahoo("NKE") #USD
+OLYMPIQUE_LYON <- get_data_from_yahoo("OLG.PA")
+RTL <- get_data_from_yahoo("RRTL.DE")
+SPIRIT_AIRLINES <- get_data_from_yahoo("SAVE") #USD
+SPORTING_BRAGA <- get_data_from_yahoo("SCB.LS")
+SPORTING_LISBOA <- get_data_from_yahoo("SCP.LS")
+SES <- get_data_from_yahoo("SESG.PA")
+BENFICA <- get_data_from_yahoo("SLBEN.LS")
+SNAPCHAT <- get_data_from_yahoo("SNAP") #USD
+SPOTIFY <- get_data_from_yahoo("SPOT") #USD
+SWISS_RE <- get_data_from_yahoo("SREN.SW") #CHF
+PORSCHE <- get_data_from_yahoo("P911.DE")
+PUMA <- get_data_from_yahoo("PUM.DE")
+PERNOD_RICARD <- get_data_from_yahoo("RI.PA")
+RYANAIR <- get_data_from_yahoo("RYAAY") #USD
+LAZIO <- get_data_from_yahoo("SSL.MI")
+TESLA <- get_data_from_yahoo("TSLA") #USD
+UNITED_AIRLINES <- get_data_from_yahoo("UAL") #USD
+VOLKSWAGEN <- get_data_from_yahoo("VOW3.DE")
+
+### Commodities ###
+
+#GOLD <- get_data_from_yahoo("GC=F") #(future) #USD
+
+
+### Indices ###
+
+DOW_JONES <- get_data_from_yahoo("^DJI") #USD
+CAC40 <- get_data_from_yahoo("^FCHI")
+FTSE100 <- get_data_from_yahoo("^FTSE") #GBP
+DAX <- get_data_from_yahoo("^GDAXI")
+S_P500 <- get_data_from_yahoo("^GSPC") #USD
+NASDAQ <- get_data_from_yahoo("^IXIC") #USD
+NIKKEI225 <- get_data_from_yahoo("^N225")
+NYSE <- get_data_from_yahoo("^NYA")
+EURO_STOXX50 <- get_data_from_yahoo("^STOXX50E")
+TECDAX <- get_data_from_yahoo("^TECDAX")
+
+### ETFs ###
+
+S_P500_ETF <- get_data_from_yahoo("SPY") #USD
+
+#market <- create_portfolio(everything...)
