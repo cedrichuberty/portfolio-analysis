@@ -67,7 +67,7 @@ expected_return_and_covariance_matrix <- function(portfolio,investment_horizon_i
   return(solution)
 }
 
-### Estimate correlation between assets ### 
+### Estimate correlation between assets ###
 
 estimate_correlation <- function(portfolio,investment_horizon_in_years=1){
   #number_of_days <- dim(portfolio)[1]
@@ -85,7 +85,6 @@ estimate_correlation <- function(portfolio,investment_horizon_in_years=1){
   names(correlation_matrix) <- name_of_assets
   return(correlation_matrix)
 }
-
 
 ### Evaluate performance ###
 
@@ -133,6 +132,23 @@ plot_portfolio <- function(portfolio,asset_allocation=cbind(portfolio[,1],data.f
   #return()
 }
 
+compare_plots <- function(portfolio,colours = rev(palette.colors())){
+  name_of_assets <- substr(names(portfolio)[2:length(names(portfolio))],7,nchar(names(portfolio)[2:length(names(portfolio))]))
+  starting_value <- max(portfolio[1,-1])
+  #ymax <- max(portfolio[,2:length(portfolio)])
+  coefficient <- starting_value/portfolio[1,-1]
+  coefficient <- coefficient[rep(nrow(coefficient),dim(portfolio)[1]),]
+  #coefficient <- data.frame(matrix(coefficient,dim(portfolio)[1],(dim(portfolio)[2]-1),byrow = TRUE))
+  ymax <- max(coefficient*portfolio[,-1])
+  plot(coefficient[,1]*portfolio[,2],type = "l",xaxt="n",ylim = c(0,ymax),xlab = "Date",ylab = "Price in EUR",col=colours[1],main = "Performance")
+  for (asset in (3:length(portfolio))) {
+    #coefficient <- starting_value/portfolio[1,asset]
+    lines(coefficient[,asset-1]*portfolio[,asset],col=colours[asset-1])
+  }
+    axis(1,at=round(seq(1,length(portfolio[,1]),(length(portfolio[,1])-1)/10)),labels = portfolio[round(seq(1,length(portfolio[,1]),(length(portfolio[,1])-1)/10)),1],las=2)
+    legend(1,ymax,legend = paste(name_of_assets,"*",round(coefficient[1,],1)),fill = colours)
+}
+
 ### Example ###
 
 football_portfolio <- create_portfolio(AJAX,
@@ -147,7 +163,7 @@ football_portfolio <- create_portfolio(AJAX,
                                        SPORTING_BRAGA,
                                        SPORTING_LISBOA)
 
-big_portfolio <- create_portfolio(APPLE,ABC_ARBITRAGE,AIRBNB,ADIDAS,AIR_FRANCE_KLM,AIRBUS,AJAX,ALLIANZ,AMAZON,BMW,BVB,CELTIC_GLASGOW,DEUTSCHE_BOERSE,DEUTSCHE_BANK,DISNEY,FC_PORTO,SOCIETE_GENERALE,GOOGLE,HANNOVER_RE,IBM,JUVENTUS,COCA_COLA,LUFTHANSA,MANCHESTER_UNITED,MERCEDES_BENZ,LVMH,MICROSOFT,MUNICH_RE,NETFLIX,NIKE,OLYMPIQUE_LYON,SPORTING_BRAGA,SPORTING_LISBOA,BENFICA,SWISS_RE,PORSCHE,PUMA,PERNOD_RICARD,LAZIO,TESLA,VOLKSWAGEN)
+big_portfolio <- create_portfolio(APPLE,ABC_ARBITRAGE,ADIDAS,AIR_FRANCE_KLM,AIRBUS,AJAX,ALLIANZ,AMAZON,BMW,BVB,CELTIC_GLASGOW,DEUTSCHE_BOERSE,DEUTSCHE_BANK,DISNEY,FC_PORTO,SOCIETE_GENERALE,GOOGLE,HANNOVER_RE,IBM,JUVENTUS,COCA_COLA,LUFTHANSA,MANCHESTER_UNITED,MERCEDES_BENZ,LVMH,MICROSOFT,MUNICH_RE,NETFLIX,NIKE,OLYMPIQUE_LYON,SPORTING_BRAGA,SPORTING_LISBOA,BENFICA,SWISS_RE,PUMA,PERNOD_RICARD,LAZIO,TESLA,VOLKSWAGEN)
 
 ### Currency change ###
 
@@ -194,7 +210,6 @@ dominance_test <- function(portfolio,return_dominated_assets,investment_horizon_
   }
   ifelse(return_dominated_assets,return(name_of_assets[dominated]),return(name_of_assets[!dominated]))
 }
-
 
 markowitz_portfolio <- function(portfolio,r=riskfree_rate,mu_bar,investment_horizon_in_years=1){
   number_of_assets <- dim(portfolio)[2]-1
@@ -252,20 +267,25 @@ get_beta <- function(portfolio=market,r=riskfree_rate,asset_allocation=data.fram
   return(portfolio_beta)
 }
 
-#plot(x=seq(0,3,3/2000),y=r+seq(0,3,3/2000)*(market_portfolio(football_portfolio,riskfree_rate)[1]-r),type = "l",xlab = "Beta",ylab = "Expected return")
+plot(x=seq(0,3,3/2000),y=r+seq(0,3,3/2000)*(market_portfolio(football_portfolio,riskfree_rate)[1]-r),type = "l",xlab = "Beta",ylab = "Expected return")
 
-
+CAPM_strategy <- function(portfolio,asset,r=riskfree_rate,investment_horizon_in_years=1){
+  number_of_assets <- dim(portfolio)[2]-1
+  column_of_asset <- which(colnames(portfolio) == paste("Close.",deparse(substitute(asset)),sep=""))
+  asset_allocation <- rep(0,number_of_assets)
+  asset_allocation[column_of_asset-1] <- 1
+  security_market_line <- r + (get_beta(portfolio,r,data.frame(matrix(asset_allocation,1,number_of_assets)),investment_horizon_in_years))*(market_portfolio(portfolio,r,investment_horizon_in_years)[1] - r)
+  expected_return_asset <- expected_return_and_covariance_matrix(asset,investment_horizon_in_years)[1]
+  ifelse(expected_return_asset >= security_market_line,return("Buy"),return("Sell"))
+}
 
 
 
 
 ### Currencies ###
 
-BTCEUR <- get_data_from_yahoo("BTC-EUR")
-BTCUSD <- get_data_from_yahoo("BTC-USD")
+
 CHFEUR <- get_data_from_yahoo("CHFEUR=X")
-ETHEUR <- get_data_from_yahoo("ETH-EUR")
-ETHUSD <- get_data_from_yahoo("ETH-USD")
 USDEUR <- get_data_from_yahoo("EUR=X")
 GBPEUR <- get_data_from_yahoo("GBPEUR=X")
 
@@ -273,65 +293,362 @@ EURUSD <- get_data_from_yahoo("EURUSD=X")
 
 ### Stocks ###
 
+AIRTEL_AFRICA <- get_data_from_yahoo("AAF.L") #GBP
 #AMERICAN_AIRLINES <- currency_change(get_data_from_yahoo("AAL"),USDEUR) #USD
 AMERICAN_AIRLINES <- get_data_from_yahoo("AAL") #USD
+ANGLO_AMERICAN <- get_data_from_yahoo("AAL.L") #GBP
 APPLE <- get_data_from_yahoo("AAPL") #USD
 ABC_ARBITRAGE <- get_data_from_yahoo("ABCA.PA")
+ABRDN <- get_data_from_yahoo("ABDN.L") #GBP
+ASSOCIATED_BRITISH_FOODS <- get_data_from_yahoo("ABF.L") #GBP
+ANHEUSER_BUSCH <- get_data_from_yahoo("ABI.BR")
 AIRBNB <- get_data_from_yahoo("ABNB") #USD
+ACCOR <- get_data_from_yahoo("AC.PA")
+CREDIT_AGRICOLE <- get_data_from_yahoo("ACA.PA")
+ACKERMANS_AND_VAN_HAAREN <- get_data_from_yahoo("ACKB.BR")
+AHOLD_DELHAIZE <- get_data_from_yahoo("AD.AS")
+ADMIRAL_GROUP <- get_data_from_yahoo("ADM.L") #GBP
+AEROPORTS_DE_PARIS <- get_data_from_yahoo("ADP.PA")
 ADIDAS <- get_data_from_yahoo("ADS.DE")
+ADYEN <- get_data_from_yahoo("ADYEN.AS")
+AEDIFICA <- get_data_from_yahoo("AED.BR")
 AIR_FRANCE_KLM <- get_data_from_yahoo("AF.PA")
+CARL_ZEISS <- get_data_from_yahoo("AFX.DE")
+AGEAS <- get_data_from_yahoo("AGS.BR")
+ASHTEAD_GROUP <- get_data_from_yahoo("AHT.L") #GBP
+AIR_LIQUIDE <- get_data_from_yahoo("AI.PA")
 AIRBUS <- get_data_from_yahoo("AIR.PA")
+AIXTRON <- get_data_from_yahoo("AIXA.DE")
 AJAX <- get_data_from_yahoo("AJAX.AS")
+ALSTOM <- get_data_from_yahoo("ALO.PA")
 ALLIANZ <- get_data_from_yahoo("ALV.DE")
+AMGEN <- get_data_from_yahoo("AMGN") #USD
+AMPLIFON <- get_data_from_yahoo("AMP.MI")
 AMAZON <- get_data_from_yahoo("AMZN") #USD
+ANTOFAGASTA <- get_data_from_yahoo("ANTO.L") #GBP
+ATOSS <- get_data_from_yahoo("AOF.DE")
+APERAM <- get_data_from_yahoo("APAM.AS")
+ARGENX <- get_data_from_yahoo("ARGX.BR")
+ASML <- get_data_from_yahoo("ASML.AS")
+AUTO_TRADER_GROUP <- get_data_from_yahoo("AUTO.L") #GBP
+AVIVA <- get_data_from_yahoo("AV.L") #GBP
+AMERICAN_EXPRESS <- get_data_from_yahoo("AXP") #USD
+AZIMUT <- get_data_from_yahoo("AZM.MI")
+ASTRAZENECA <- get_data_from_yahoo("AZN.L") #GBP
+A_TWO_A <- get_data_from_yahoo("A2A.MI") 
 BOEING <- get_data_from_yahoo("BA") #USD
+BAE_SYSTEMS <- get_data_from_yahoo("BA.L") #GBP
 ALIBABA <- get_data_from_yahoo("BABA") #USD
+BANCO_BPM <- get_data_from_yahoo("BAMI.MI")
+BARCO <- get_data_from_yahoo("BAR.BR")
+BARCLAYS <- get_data_from_yahoo("BARC.L") #GBP
+BASF <- get_data_from_yahoo("BAS.DE")
+BRITISH_AMERICAN_TOBACCO <- get_data_from_yahoo("BATS.L") #GBP
+BAYER <- get_data_from_yahoo("BAYN.DE")
+BBVA <- get_data_from_yahoo("BBVA.MC")
+BECHTLE <- get_data_from_yahoo("BC8.DE")
+BARRATT_DEVELOPMENTS <- get_data_from_yahoo("BDEV.L") #GBP
+BEIERSDORF <- get_data_from_yahoo("BEI.DE")
+BEAZLEY <- get_data_from_yahoo("BEZ.L") #GBP
+BANCA_GENERALI <- get_data_from_yahoo("BGN.MI")
+BERKELEY_GROUP <- get_data_from_yahoo("BKG.L") #GBP
 BLACKROCK <- get_data_from_yahoo("BLK") #USD
+B_AND_M <- get_data_from_yahoo("BME.L") #GBP
+BANCA_MEDIOLANUM <- get_data_from_yahoo("BMED.MI")
+BANCA_MONTE_PASCHI_SIENA <- get_data_from_yahoo("BMPS.MI")
 BMW <- get_data_from_yahoo("BMW.DE")
+DANONE <- get_data_from_yahoo("BN.PA")
+BNP_PARIBAS <- get_data_from_yahoo("BNP.PA")
+BRENNTAG <- get_data_from_yahoo("BNR.DE")
+BUNZL <- get_data_from_yahoo("BNZL.L") #GBP
+BP <- get_data_from_yahoo("BP.L") #GBP
+BPER_BANCA <- get_data_from_yahoo("BPE.MI")
+BURBERRY <- get_data_from_yahoo("BRBY.L") #GBP
+BREDERODE <- get_data_from_yahoo("BREB.BR")
+BT_GROUP <- get_data_from_yahoo("BT-A.L") #GBP
 BVB <- get_data_from_yahoo("BVB.DE")
+BAADER_BANK <- get_data_from_yahoo("BWB.DE")
+BAYWA <- get_data_from_yahoo("BYW6.DE")
+CARREFOUR <- get_data_from_yahoo("CA.PA")
+CAPGEMINI <- get_data_from_yahoo("CAP.PA")
+CATERPILLAR <- get_data_from_yahoo("CAT") #USD
+COMMERZBANK <- get_data_from_yahoo("CBK.DE")
+COCA_COLA_HBC <- get_data_from_yahoo("CCH.L") #GBP
 CELTIC_GLASGOW <- get_data_from_yahoo("CCP.L") #GBP
+CENTRICA <- get_data_from_yahoo("CNA.L") #GBP
+CNH_INDUSTRIAL <- get_data_from_yahoo("CNHI.MI")
+COFINIMMO <- get_data_from_yahoo("COFB.BR")
+CANCOM <- get_data_from_yahoo("COK.DE")
+CONTINENTAL <- get_data_from_yahoo("CON.DE")
+COMPUGROUP <- get_data_from_yahoo("COP.DE")
+COMPASS_GROUP <- get_data_from_yahoo("CPG.L") #GBP
+CAMPARI <- get_data_from_yahoo("CPR.MI")
+CRODA_INTERNATIONAL <- get_data_from_yahoo("CRDA.L") #GBP
+CRH <- get_data_from_yahoo("CRH.L") #GBP
+SALESFORCE <- get_data_from_yahoo("CRM") #USD
+AXA <- get_data_from_yahoo("CS.PA")
+CISCO <- get_data_from_yahoo("CSCO") #USD
+CONVATEC_GROUP <- get_data_from_yahoo("CTEC.L") #GBP
+CHEVRON <- get_data_from_yahoo("CVX") #USD
+COVESTRO <- get_data_from_yahoo("1COV.DE")
 DELTA_AIRLINES <- get_data_from_yahoo("DAL") #USD
 DEUTSCHE_BOERSE <- get_data_from_yahoo("DB1.DE")
 DEUTSCHE_BANK <- get_data_from_yahoo("DBK.DE")
+DCC <- get_data_from_yahoo("DCC.L") #GBP
+VINCI <- get_data_from_yahoo("DG.PA")
+DIAGEO <- get_data_from_yahoo("DGE.L") #GBP
+DELIVERY_HERO <- get_data_from_yahoo("DHER.DE")
+DIASORIN <- get_data_from_yahoo("DIA.MI")
+DIETEREN <- get_data_from_yahoo("DIE.BR")
 DISNEY <- get_data_from_yahoo("DIS") #USD
+DOW <- get_data_from_yahoo("DOW") #USD
+DEUTSCHE_POST <- get_data_from_yahoo("DPW.DE")
+DASSAULT <- get_data_from_yahoo("DSY.PA")
+DEUTSCHE_TELEKOM <- get_data_from_yahoo("DTE.DE")
+DAIMLER_TRUCK <- get_data_from_yahoo("DTG.DE")
+DEUTSCHE_WOHNEN <- get_data_from_yahoo("DWNI.DE")
 EBAY <- get_data_from_yahoo("EBAY") #USD
+EDENRED <- get_data_from_yahoo("EDEN.PA")
+ENDEAVOUR_MINING <- get_data_from_yahoo("EDV.L") #GBP
+ESSILORLUXOTTICA <- get_data_from_yahoo("EL.PA")
+ELIA <- get_data_from_yahoo("ELI.BR")
+BOUYGUES <- get_data_from_yahoo("EN.PA")
+ENEL <- get_data_from_yahoo("ENEL.MI")
+ENGIE <- get_data_from_yahoo("ENGI.PA")
+ENI <- get_data_from_yahoo("ENI.MI")
+SIEMENS_ENERGY <- get_data_from_yahoo("ENR.DE")
+ENTAIN <- get_data_from_yahoo("ENT.L") #GBP
+EURONEXT <- get_data_from_yahoo("ENX.PA")
+EON <- get_data_from_yahoo("EOAN.DE")
+EUROFINS <- get_data_from_yahoo("ERF.PA")
+ERG <- get_data_from_yahoo("ERG.MI")
 ETSY <- get_data_from_yahoo("ETSY") #USD
+ECKERT_ZIEGLER <- get_data_from_yahoo("EUZ.DE")
+EVOTEC <- get_data_from_yahoo("EVT.DE")
+EXPERIAN <- get_data_from_yahoo("EXPN.L") #GBP
+FINECOBANK <- get_data_from_yahoo("FBK.MI")
+F_AND_C_INVESTMENT_TRUST <- get_data_from_yahoo("FCIT.L") #GBP
 FC_PORTO <- get_data_from_yahoo("FCP.LS")
+FLUTTER_ENTERTAINMENT <- get_data_from_yahoo("FLTR.L") #GBP
+FREENET <- get_data_from_yahoo("FNTN.DE")
+FRASERS_GROUP <- get_data_from_yahoo("FRAS.L") #GBP
+FRESENIUS <- get_data_from_yahoo("FRE.DE")
+FRESNILLO <- get_data_from_yahoo("FRES.L") #GBP
+ASSICURAZIONI_GENERALI <- get_data_from_yahoo("G.MI")
+BRUXELLES_LAMBERT <- get_data_from_yahoo("GBLB.BR")
 SOCIETE_GENERALE <- get_data_from_yahoo("GLE.PA")
+GLENCORE <- get_data_from_yahoo("GLEN.L") #GBP
+GALAPAGOS <- get_data_from_yahoo("GLPG.AS")
 GOOGLE <- get_data_from_yahoo("GOOG") #USD
+GOLDMAN_SACHS <- get_data_from_yahoo("GS") #USD
+GSK <- get_data_from_yahoo("GSK.L") #GBP
+HENSOLDT <- get_data_from_yahoo("HAG.DE")
+HOME_DEPOT <- get_data_from_yahoo("HD") #USD
+HEIDELBERG_CEMENT <- get_data_from_yahoo("HEI.DE")
+HENKEL <- get_data_from_yahoo("HEN3.DE")
+HERA <- get_data_from_yahoo("HER.MI")
+HELLO_FRESH <- get_data_from_yahoo("HFG.DE")
+HARGREAVES_LANSDOWN <- get_data_from_yahoo("HL.L") #GBP
+HALMA <- get_data_from_yahoo("HLMA.L") #GBP
+HALEON <- get_data_from_yahoo("HLN.L") #GBP
 HANNOVER_RE <- get_data_from_yahoo("HNR1.DE")
+THALES <- get_data_from_yahoo("HO.PA")
+HONEYWELL <- get_data_from_yahoo("HON") #USD
+HSBC_HOLDINGS <- get_data_from_yahoo("HSBA.L") #GBP
+HISCOX <- get_data_from_yahoo("HSX.L") #GBP
+INTERNATIONAL_CONSOLIDATED_AIRLINES_GROUP <- get_data_from_yahoo("IAG.L") #GBP
+INTERCONTINENTAL_HOTELS_GROUP <- get_data_from_yahoo("IHG.L") #GBP
+IBERDROLA <- get_data_from_yahoo("IBE.MC")
 IBM <- get_data_from_yahoo("IBM") #USD
+INFINEON <- get_data_from_yahoo("IFX.DE")
+ITALGAS <- get_data_from_yahoo("IG.MI")
+THREE_I_GROUP <- get_data_from_yahoo("III.L") #GBP
+IMPERIAL_BRANDS <- get_data_from_yahoo("IMB.L") #GBP
+IMI <- get_data_from_yahoo("IMI.L") #GBP
+INFORMA <- get_data_from_yahoo("INF.L") #GBP
+ING <- get_data_from_yahoo("INGA.AS")
+INTEL <- get_data_from_yahoo("INTC") #USD
+INFRASTRUTTURE_WIRELESS_ITALIANE <- get_data_from_yahoo("INW.MI")
+INTERPUMP <- get_data_from_yahoo("IP.MI")
+INTESA_SANPAOLO <- get_data_from_yahoo("ISP.MI")
+INTERTEK_GROUP <- get_data_from_yahoo("ITRK.L") #GBP
+INDITEX <- get_data_from_yahoo("ITX.MC")
+IVECO <- get_data_from_yahoo("IVG.MI")
+JD_SPORTS <- get_data_from_yahoo("JD.L") #GBP
+JENOPTIC <- get_data_from_yahoo("JEN.DE")
+JOHNSON_MATTHEY <- get_data_from_yahoo("JMAT.L") #GBP
+JOHNSON_AND_JOHNSON <- get_data_from_yahoo("JNJ") #USD
+JPMORGAN <- get_data_from_yahoo("JPM") #USD
 JUVENTUS <- get_data_from_yahoo("JUVE.MI")
+KBC <- get_data_from_yahoo("KBC.BR")
+KERING <- get_data_from_yahoo("KER.PA")
+KINGFISHER <- get_data_from_yahoo("KGF.L") #GBP
+KONE <- get_data_from_yahoo("KNEBV.HE")
 COCA_COLA <- get_data_from_yahoo("KO") #USD
+KONTRON <- get_data_from_yahoo("KTN.DE")
+LAND_SECURITIES <- get_data_from_yahoo("LAND.L") #GBP
+LEONARDO <- get_data_from_yahoo("LDO.MI")
+LEGAL_AND_GENERAL <- get_data_from_yahoo("LGEN.L") #GBP
 LUFTHANSA <- get_data_from_yahoo("LHA.DE")
+LLOYDS_BANKING <- get_data_from_yahoo("LLOY.L") #GBP
+LEGRAND <- get_data_from_yahoo("LR.PA")
+LONDON_STOCK_EXCHANGE <- get_data_from_yahoo("LSEG.L") #GBP
 SOUTHWEST_AIRLINES <- get_data_from_yahoo("LUV") #USD
 MANCHESTER_UNITED <- get_data_from_yahoo("MANU") #USD
+MEDIOBANCA <- get_data_from_yahoo("MB.MI")
 MERCEDES_BENZ <- get_data_from_yahoo("MBG.DE")
 LVMH <- get_data_from_yahoo("MC.PA")
+MC_DONALDS <- get_data_from_yahoo("MCD") #USD
+MELEXIS <- get_data_from_yahoo("MELE.BR")
 META <- get_data_from_yahoo("META") #USD
+MICHELIN <- get_data_from_yahoo("ML.PA")
+THREE_M <- get_data_from_yahoo("MMM") #USD
+MONDI <- get_data_from_yahoo("MNDI.L") #GBP
+M_AND_G <- get_data_from_yahoo("MNG.L") #GBP
+MONCLER <- get_data_from_yahoo("MONC.MI")
+MORPHOSYS <- get_data_from_yahoo("MOR.DE")
+#MERCK <- get_data_from_yahoo("MRK") #USD
+MERCK <- get_data_from_yahoo("MRK.DE")
+MELROSE_INDUSTRIES <- get_data_from_yahoo("MRO.L") #GBP
 MICROSOFT <- get_data_from_yahoo("MSFT") #USD
-ARCELOR_MITTAL <- get_data_from_yahoo("MT") #USD
+ARCELOR_MITTAL <- get_data_from_yahoo("MT.AS")
+#ARCELOR_MITTAL <- get_data_from_yahoo("MT") #USD
+MTU <- get_data_from_yahoo("MTX.DE")
 MUNICH_RE <- get_data_from_yahoo("MUV2.DE")
+NAGARRO <- get_data_from_yahoo("NA9.DE")
+NORDEX <- get_data_from_yahoo("NDX1.DE")
+NEMETSCHEK <- get_data_from_yahoo("NEM.DE")
+NEXI <- get_data_from_yahoo("NEXI.MI")
 NETFLIX <- get_data_from_yahoo("NFLX") #USD
+NATIONAL_GRID <- get_data_from_yahoo("NG.L") #GBP
 NIKE <- get_data_from_yahoo("NKE") #USD
+NATWEST <- get_data_from_yahoo("NWG.L") #GBP
+NEXT <- get_data_from_yahoo("NXT.L") #GBP
+OCADO <- get_data_from_yahoo("OCDO.L") #GBP
 OLYMPIQUE_LYON <- get_data_from_yahoo("OLG.PA")
+LOREAL <- get_data_from_yahoo("OR.PA")
+ORANGE <- get_data_from_yahoo("ORA.PA")
+TELEFONICA_DEUTSCHLAND <- get_data_from_yahoo("O2D.DE")
+PORSCHE_HOLDING <- get_data_from_yahoo("PAH3.DE")
+PROCTER_AND_GAMBLE <- get_data_from_yahoo("PG") #USD
+PHILIPS_ELECTRONICS <- get_data_from_yahoo("PHIA.AS")
+PHOENIX_GROUP <- get_data_from_yahoo("PHNX.L") #GBP
+PIRELLI <- get_data_from_yahoo("PIRC.MI")
+PROXIMUS <- get_data_from_yahoo("PROX.BR")
+PRUDENTIAL <- get_data_from_yahoo("PRU.L") #GBP
+PROSUS <- get_data_from_yahoo("PRX.AS")
+PRYSMIAN <- get_data_from_yahoo("PRY.MI")
+PERSHING_SQUARE <- get_data_from_yahoo("PSH.L") #GBP
+PROSIEBEN_SAT1 <- get_data_from_yahoo("PSM.DE")
+PERSIMMON <- get_data_from_yahoo("PSN.L") #GBP
+PEARSON <- get_data_from_yahoo("PSON.L") #GBP
+POSTE_ITALIANE <- get_data_from_yahoo("PST.MI")
+PUBLICIS <- get_data_from_yahoo("PUB.PA")
+PUMA <- get_data_from_yahoo("PUM.DE")
+PORSCHE <- get_data_from_yahoo("P911.DE")
+ADTRAN <- get_data_from_yahoo("QH9.DE")
+QIAGEN <- get_data_from_yahoo("QIA.DE")
+FERRARI <- get_data_from_yahoo("RACE.MI")
+REMY_COINTREAU <- get_data_from_yahoo("RCO.PA")
+RECORDATI_ORD <- get_data_from_yahoo("REC.MI")
+RELX <- get_data_from_yahoo("REL.L") #GBP
+RHEINMETALL <- get_data_from_yahoo("RHM.DE")
+PERNOD_RICARD <- get_data_from_yahoo("RI.PA")
+RIO_TINTO <- get_data_from_yahoo("RIO.L") #GBP
+RECKITT_BENCKISER <- get_data_from_yahoo("RKT.L") #GBP
+HERMES <- get_data_from_yahoo("RMS.PA")
+RIGHTMOVE <- get_data_from_yahoo("RMV.L") #GBP
+RENAULT <- get_data_from_yahoo("RNO.PA")
+REINET_INVESTMENTS <- get_data_from_yahoo("RNT.F")
+ROLLS_ROYCE <- get_data_from_yahoo("RR.L") #GBP
 RTL <- get_data_from_yahoo("RRTL.DE")
+RS_GROUP <- get_data_from_yahoo("RS1.L") #GBP
+RENTOKIL_INITIAL <- get_data_from_yahoo("RTO.L") #GBP
+RWE <- get_data_from_yahoo("RWE.DE")
+RYANAIR <- get_data_from_yahoo("RYAAY") #USD
+SAFRAN <- get_data_from_yahoo("SAF.PA")
+SANTANDER <- get_data_from_yahoo("SAN.MC")
+SANOFI <- get_data_from_yahoo("SAN.PA")
+SAP <- get_data_from_yahoo("SAP.DE")
 SPIRIT_AIRLINES <- get_data_from_yahoo("SAVE") #USD
+SAINSBURY <- get_data_from_yahoo("SBRY.L") #GBP
 SPORTING_BRAGA <- get_data_from_yahoo("SCB.LS")
 SPORTING_LISBOA <- get_data_from_yahoo("SCP.LS")
+SCHRODERS <- get_data_from_yahoo("SDR.L") #GBP
 SES <- get_data_from_yahoo("SESG.PA")
+SAGE_GROUP <- get_data_from_yahoo("SGE.L") #GBP
+SAINT_GOBAIN <- get_data_from_yahoo("SGO.PA")
+SEGRO <- get_data_from_yahoo("SGRO.L") #GBP
+SHELL <- get_data_from_yahoo("SHEL.L") #GBP
+SIEMENS_HEALTHINEERS <- get_data_from_yahoo("SHL.DE")
+SIEMENS <- get_data_from_yahoo("SIE.DE")
+SMURFIT_KAPPA <- get_data_from_yahoo("SKG.L") #GBP
 BENFICA <- get_data_from_yahoo("SLBEN.LS")
+DS_SMITH <- get_data_from_yahoo("SMDS.L") #GBP
+SMITHS_GROUP <- get_data_from_yahoo("SMIN.L") #GBP
+SCOTTISH_MORTGAGE_INVESTMENT_TRUST <- get_data_from_yahoo("SMT.L") #GBP
+SMITH_NEPHEW <- get_data_from_yahoo("SN.L") #GBP
 SNAPCHAT <- get_data_from_yahoo("SNAP") #USD
+SOFINA <- get_data_from_yahoo("SOF.BR")
+SOLVAY <- get_data_from_yahoo("SOLB.BR")
+SOFTWARE <- get_data_from_yahoo("SOW.DE")
+SAIPEM <- get_data_from_yahoo("SPM.MI")
 SPOTIFY <- get_data_from_yahoo("SPOT") #USD
+SPIRAX_SARCO_ENGINEERING <- get_data_from_yahoo("SPX.L") #GBP
 SWISS_RE <- get_data_from_yahoo("SREN.SW") #CHF
-PORSCHE <- get_data_from_yahoo("P911.DE")
-PUMA <- get_data_from_yahoo("PUM.DE")
-PERNOD_RICARD <- get_data_from_yahoo("RI.PA")
-RYANAIR <- get_data_from_yahoo("RYAAY") #USD
+SNAM <- get_data_from_yahoo("SRG.MI")
+SARTORIUS <- get_data_from_yahoo("SRT3.DE")
+SSE <- get_data_from_yahoo("SSE.L") #GBP
 LAZIO <- get_data_from_yahoo("SSL.MI")
+STANDARD_CHARTERED <- get_data_from_yahoo("STAN.L") #GBP
+ST_JAMES_PLACE <- get_data_from_yahoo("STJ.L") #GBP
+#STELLANTIS <- get_data_from_yahoo("STLAM.MI")
+STELLANTIS <- get_data_from_yahoo("STLAP.PA")
+#ST_MICROELECTRONICS <- get_data_from_yahoo("STMMI.MI")
+ST_MICROELECTRONICS <- get_data_from_yahoo("STMPA.PA")
+SCHNEIDER <- get_data_from_yahoo("SU.PA")
+SEVERN_TRENT <- get_data_from_yahoo("SVT.L") #GBP
+SYMRISE <- get_data_from_yahoo("SY1.DE")
+SMA <- get_data_from_yahoo("S92.DE")
+TENARIS <- get_data_from_yahoo("TEN.MI")
+TELEPERFORMANCE <- get_data_from_yahoo("TEP.PA")
+TELECOM_ITALIA <- get_data_from_yahoo("TIT.MI")
+THYSSENKRUPP <- get_data_from_yahoo("TKA.DE")
+TEAMVIEWER <- get_data_from_yahoo("TMV.DE")
+TERNA <- get_data_from_yahoo("TRN.MI")
+TRAVELERS <- get_data_from_yahoo("TRV") #USD
+TESCO <- get_data_from_yahoo("TSCO.L") #GBP
 TESLA <- get_data_from_yahoo("TSLA") #USD
+TOTAL_ENERGIES <- get_data_from_yahoo("TTE.PA")
+TAYLOR_WIMPEY <- get_data_from_yahoo("TW.L") #GBP
 UNITED_AIRLINES <- get_data_from_yahoo("UAL") #USD
+UBISOFT <- get_data_from_yahoo("UBI.PA")
+UCB <- get_data_from_yahoo("UCB.BR")
+UNICREDIT <- get_data_from_yahoo("UCG.MI")
+UNILEVER <- get_data_from_yahoo("ULVR.L") #GBP
+UMICORE <- get_data_from_yahoo("UMI.BR")
+UNITED_HEALTH <- get_data_from_yahoo("UNH") #USD
+UNIPOL <- get_data_from_yahoo("UNI.MI")
+UNIBAIL_RODAMCO_WESTFIELD <- get_data_from_yahoo("URW.PA")
+UNITED_INTERNET <- get_data_from_yahoo("UTDI.DE")
+UNITE_GROUP <- get_data_from_yahoo("UTG.L") #GBP
+UNITED_UTILITIES <- get_data_from_yahoo("UU.L") #GBP
+VISA <- get_data_from_yahoo("V") #USD
+VERBIO <- get_data_from_yahoo("VBK.DE")
+VEOLIA <- get_data_from_yahoo("VIE.PA")
+VONOVIA <- get_data_from_yahoo("VNA.DE")
+VODAFONE <- get_data_from_yahoo("VOD.L") #GBP
 VOLKSWAGEN <- get_data_from_yahoo("VOW3.DE")
+VERIZON <- get_data_from_yahoo("VZ") #USD
+SILTRONIC <- get_data_from_yahoo("WAF.DE")
+WALGREENS_BOOTS_ALLIANCE <- get_data_from_yahoo("WBA") #USD
+WAREHOUSES_DE_PAUW <- get_data_from_yahoo("WDP.BR")
+WEIR_GROUP <- get_data_from_yahoo("WEIR.L") #GBP
+WORLDLINE <- get_data_from_yahoo("WLN.PA")
+WALMART <- get_data_from_yahoo("WMT") #USD
+WPP <- get_data_from_yahoo("WPP.L") #GBP
+WHITBREAD <- get_data_from_yahoo("WTB.L") #GBP
+ZALANDO <- get_data_from_yahoo("ZAL.DE")
 
 ### Commodities ###
 
@@ -355,4 +672,62 @@ TECDAX <- get_data_from_yahoo("^TECDAX")
 
 S_P500_ETF <- get_data_from_yahoo("SPY") #USD
 
-#market <- create_portfolio(everything...)
+### Crypto ###
+
+AAVEEUR <- get_data_from_yahoo("AAVE-EUR")
+ADAEUR <- get_data_from_yahoo("ADA-EUR")
+ALGOEUR <- get_data_from_yahoo("ALGO-EUR")
+BCHEUR <- get_data_from_yahoo("BCH-EUR")
+BTCEUR <- get_data_from_yahoo("BTC-EUR")
+DOGEEUR <- get_data_from_yahoo("DOGE-EUR")
+DOTEUR <- get_data_from_yahoo("DOT-EUR")
+ETHEUR <- get_data_from_yahoo("ETH-EUR")
+LINKEUR <- get_data_from_yahoo("LINK-EUR")
+LTCEUR <- get_data_from_yahoo("LTC-EUR")
+MANAEUR <- get_data_from_yahoo("MANA-EUR")
+MATICEUR <- get_data_from_yahoo("MATIC-EUR")
+SANDEUR <- get_data_from_yahoo("SAND-EUR")
+SHIBEUR <- get_data_from_yahoo("SHIB-EUR")
+SOLEUR <- get_data_from_yahoo("SOL-EUR")
+UNIEUR <- get_data_from_yahoo("UNI7083-EUR")
+XRPEUR <- get_data_from_yahoo("XRP-EUR")
+
+crypto_market <- create_portfolio(AAVEEUR,ADAEUR,ALGOEUR,BCHEUR,BTCEUR,DOGEEUR,DOTEUR,
+                                  ETHEUR,LINKEUR,LTCEUR,MANAEUR,MATICEUR,SANDEUR,#SHIBEUR,
+                                  SOLEUR,UNIEUR,XRPEUR)
+
+
+BTCUSD <- get_data_from_yahoo("BTC-USD")
+ETHUSD <- get_data_from_yahoo("ETH-USD")
+
+
+market <- create_portfolio(ABC_ARBITRAGE,ADIDAS,AHOLD_DELHAIZE,AIR_FRANCE_KLM,
+                          AIR_LIQUIDE,AIRBUS,AIXTRON,AJAX,ALIBABA,ALLIANZ,ALSTOM,
+                          AMAZON,AMERICAN_AIRLINES,AMERICAN_EXPRESS,AMGEN,ANHEUSER_BUSCH,
+                          APERAM,APPLE,ARCELOR_MITTAL,ASML,ATOSS,AXA,BAADER_BANK,BASF,BAYER,BAYWA,
+                          BBVA,BECHTLE,BEIERSDORF,BENFICA,BLACKROCK,BMW,BNP_PARIBAS,BOEING,
+                          BOUYGUES,BREDERODE,BRENNTAG,BVB,CANCOM,CAPGEMINI,CARL_ZEISS,CARREFOUR,
+                          CATERPILLAR,CELTIC_GLASGOW,CHEVRON,CISCO,COCA_COLA,COMMERZBANK,
+                          COMPUGROUP,CONTINENTAL,COVESTRO,CREDIT_AGRICOLE,CRH,
+                          DANONE,DASSAULT,DELIVERY_HERO,DELTA_AIRLINES,DEUTSCHE_BANK,DEUTSCHE_BOERSE,
+                          DEUTSCHE_POST,DEUTSCHE_TELEKOM,DEUTSCHE_WOHNEN,DISNEY,EBAY,
+                          ECKERT_ZIEGLER,EDENRED,ENEL,ENGIE,ENI,EON,ESSILORLUXOTTICA,ETSY,
+                          EUROFINS,EVOTEC,FC_PORTO,FREENET,FRESENIUS,GOLDMAN_SACHS,GOOGLE,
+                          HANNOVER_RE,HEIDELBERG_CEMENT,HELLO_FRESH,HENKEL,HERMES,
+                          HOME_DEPOT,HONEYWELL,IBERDROLA,IBM,INDITEX,INFINEON,ING,INTEL,
+                          INTESA_SANPAOLO,JENOPTIC,JOHNSON_AND_JOHNSON,JPMORGAN,JUVENTUS,
+                          KERING,KONE,KONTRON,LAZIO,LEGRAND,LOREAL,LUFTHANSA,LVMH,MANCHESTER_UNITED,
+                          MC_DONALDS,MERCEDES_BENZ,MERCK,META,MICHELIN,MICROSOFT,MORPHOSYS,
+                          MTU,MUNICH_RE,NEMETSCHEK,NETFLIX,NIKE,NORDEX,OLYMPIQUE_LYON,
+                          ORANGE,PERNOD_RICARD,PHILIPS_ELECTRONICS,PORSCHE_HOLDING,
+                          PROCTER_AND_GAMBLE,PROSIEBEN_SAT1,PUBLICIS,PUMA,QIAGEN,
+                          RENAULT,RHEINMETALL,RTL,RWE,RYANAIR,SAFRAN,
+                          SAINT_GOBAIN,SALESFORCE,SANOFI,SANTANDER,SAP,SARTORIUS,SCHNEIDER,
+                          SES,SIEMENS,SIEMENS_HEALTHINEERS,SILTRONIC,SMA,SNAPCHAT,
+                          SOCIETE_GENERALE,SOFTWARE,SOUTHWEST_AIRLINES,SPIRIT_AIRLINES,SPORTING_BRAGA,
+                          SPORTING_LISBOA,SPOTIFY,ST_MICROELECTRONICS,SWISS_RE,
+                          SYMRISE,TELEFONICA_DEUTSCHLAND,TELEPERFORMANCE,TESLA,
+                          THALES,THREE_M,THYSSENKRUPP,TOTAL_ENERGIES,TRAVELERS,
+                          UNITED_AIRLINES,UNITED_HEALTH,UNITED_INTERNET,VEOLIA,VERBIO,VERIZON,
+                          VINCI,VISA,VOLKSWAGEN,VONOVIA,WALGREENS_BOOTS_ALLIANCE,WALMART,
+                          WORLDLINE,ZALANDO)
